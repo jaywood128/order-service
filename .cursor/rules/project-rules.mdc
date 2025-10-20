@@ -1,0 +1,397 @@
+---
+alwaysApply: true
+---
+
+You are an expert in Java 21, Spring Boot 3.x, Apache Kafka, and microservices architecture.
+
+# Project Context
+This is StreamCart, an event-driven e-commerce system with separate microservices:
+- order-service (port 8081)
+- payment-service (port 8082)  
+- inventory-service (port 8083)
+
+Remeber that this microservice in this directory is the order service do don't get confused as to which micro-service you are currrently in.
+
+Each service has its own PostgreSQL database and communicates via Kafka events.
+
+# Code Style
+
+## Package Structure
+Always use this structure:
+- controller/ for REST endpoints
+- service/ for business logic
+- repository/ for JPA repositories
+- entity/ for database entities
+- dto/ for data transfer objects (requests, responses, events)
+- publisher/ for Kafka producers
+- consumer/ for Kafka consumers
+- config/ for Spring configuration
+
+## Naming Conventions
+- Entities: Singular nouns (Order, Payment, Product)
+- DTOs: Suffix with Request/Response/Event (CreateOrderRequest, OrderCreatedEvent)
+- Services: Suffix with Service (OrderService)
+- Controllers: Suffix with Controller (OrderController)
+- Repositories: Suffix with Repository (OrderRepository)
+- Kafka topics: dot notation lowercase (order.created, payment.processed)
+
+## Dependencies
+Always use:
+- Lombok (@Data, @RequiredArgsConstructor, @Slf4j, @NoArgsConstructor, @AllArgsConstructor)
+- Constructor injection with @RequiredArgsConstructor, never field injection
+- SLF4J logging via @Slf4j, never System.out.println
+- Jakarta validation (@Valid, @NotNull, @NotBlank)
+- BigDecimal for money, never float or double
+- LocalDateTime for timestamps, never Date
+
+# Spring Boot Conventions
+
+## Controllers
+- Use @RestController not @Controller
+- Use @RequestMapping("/api/resource") at class level
+- Use specific method annotations (@PostMapping, @GetMapping, @PutMapping, @DeleteMapping)
+- Always validate with @Valid on @RequestBody
+- Return ResponseEntity<T> for explicit status codes
+- Use @PathVariable for IDs, @RequestBody for payloads
+- Never expose entities directly, always use DTOs
+
+## Services
+- Mark with @Service
+- Use @Transactional on methods that modify data
+- Use @Transactional(readOnly = true) for queries
+- Constructor inject dependencies via @RequiredArgsConstructor
+- Always log important operations with context (IDs, etc)
+- Keep methods focused and under 20 lines
+
+## Entities
+- Use @Entity and @Table(name = "table_name")
+- Use @Id for primary keys
+- Use @Column(nullable = false) for required fields
+- Use @Enumerated(EnumType.STRING) for enums, never ORDINAL
+- Use @OneToMany(cascade = CascadeType.ALL, orphanRemoval = true) for parent-child
+- Use @ManyToOne(fetch = FetchType.LAZY) for foreign keys
+- Add @PrePersist and @PreUpdate for audit fields (createdAt, updatedAt)
+- Include helper methods like addItem() for bidirectional relationships
+
+## Repositories
+- Extend JpaRepository<Entity, IdType>
+- Use Spring Data method naming (findByCustomerId, existsByOrderId)
+- Add @Repository annotation
+
+# Kafka Patterns
+
+## Producers
+- Create a dedicated publisher class annotated with @Component
+- Inject KafkaTemplate<String, EventType>
+- Use business keys (orderId) as message keys
+- Always log before publishing
+- Use CompletableFuture callbacks for success/failure handling
+- Topic name as constant: private static final String TOPIC = "order.created";
+
+Example:
+```java
+@Component
+@RequiredArgsConstructor
+@Slf4j
+public class OrderEventPublisher {
+    private static final String TOPIC = "order.created";
+    private final KafkaTemplate<String, OrderCreatedEvent> kafkaTemplate;
+    
+    public void publishOrderCreated(OrderCreatedEvent event) {
+        log.info("Publishing order created event: {}", event.getOrderId());
+        CompletableFuture<SendResult<String, OrderCreatedEvent>> future = 
+            kafkaTemplate.send(TOPIC, event.getOrderId(), event);
+        
+        future.whenComplete((result, ex) -> {
+            if (ex == null) {
+                log.info("Successfully published event for order: {}", event.getOrderId());
+            } else {
+                log.error("Failed to publish event for order: {}", event.getOrderId(), ex);
+            }
+        });
+    }
+}
+```
+
+## Consumers
+- Use @KafkaListener(topics = "topic.name", groupId = "service-name-group")
+- Always log incoming messages
+- Wrap in try-catch for error handling
+- Consider idempotency
+- Update database and publish new events if needed
+
+## Events (DTOs for Kafka)
+- Use clear names ending in Event (OrderCreatedEvent, PaymentProcessedEvent)
+- Include timestamp field (LocalDateTime)
+- Include correlation/trace IDs for debugging
+- Make all fields serializable
+- Use Lombok @Data, @NoArgsConstructor, @AllArgsConstructor
+
+# Database Conventions
+
+## Configuration in application.yml
+```yaml
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/service_db
+    username: service_user
+    password: service_pass
+  jpa:
+    hibernate:
+      ddl-auto: update  # or validate with Flyway
+    show-sql: true
+```
+
+## Schema Management
+- Use ddl-auto: update for local development
+- Use Flyway migrations for production
+- Never use ddl-auto: create-drop outside of tests
+
+## Queries
+- Use Spring Data method naming first
+- Add @Query only when necessary
+- Use native queries sparingly
+- Always add indexes on foreign keys and frequently queried columns
+
+# Testing Approach
+- Unit test services with mocked repositories
+- Integration test with @SpringBootTest
+- Use @DataJpaTest for repository tests
+- Use @EmbeddedKafka for Kafka integration tests
+
+# Security & Configuration
+- Never hardcode credentials, ports, or URLs
+- Use ${ENV_VAR:default_value} in application.yml
+- Keep sensitive data in environment variables
+- Use separate profiles (application-dev.yml, application-prod.yml)
+
+# Git & Version Control
+
+## .gitignore Best Practices
+Always ensure your .gitignore includes:
+
+### Build Artifacts (MUST ignore)
+- `target/` - Maven build output directory
+- `*.jar` - Compiled JAR files (except Maven wrapper JAR)
+- `*.war` - Compiled WAR files
+- `*.class` - Compiled class files
+- `build/` - Gradle build output (if using Gradle)
+
+### IDE-Specific Files (MUST ignore)
+- `.idea/` - IntelliJ IDEA project files
+- `*.iml` - IntelliJ module files
+- `.vscode/` - VS Code settings (except shared workspace settings)
+- `.eclipse/` - Eclipse project files
+- `.settings/` - Eclipse settings
+- `.classpath` - Eclipse classpath
+- `.project` - Eclipse project
+- `.metadata/` - Eclipse metadata
+
+### OS-Specific Files (MUST ignore)
+- `.DS_Store` - macOS folder metadata
+- `.AppleDouble` - macOS resource forks
+- `.LSOverride` - macOS icon metadata
+- `._*` - macOS resource fork files
+- `Thumbs.db` - Windows thumbnail cache
+- `desktop.ini` - Windows folder settings
+
+### Environment & Secrets (MUST ignore)
+- `.env` - Environment variables file
+- `*.log` - Log files
+- `application-local.yml` - Local-only configuration
+- `application-secret.yml` - Secrets configuration
+
+### Maven Wrapper Files (NEVER ignore - MUST commit)
+These files MUST be committed to version control:
+- `mvnw` - Maven wrapper script (Unix/Mac)
+- `mvnw.cmd` - Maven wrapper script (Windows)
+- `.mvn/wrapper/maven-wrapper.properties` - Wrapper configuration
+- `.mvn/wrapper/maven-wrapper.jar` - Wrapper JAR (this is the ONLY JAR that should be committed)
+
+**Why commit Maven wrapper?**
+- Ensures all developers use the same Maven version
+- No need to install Maven globally
+- CI/CD pipelines work out of the box
+- Guarantees build reproducibility across environments
+
+### Cursor AI Files (CONDITIONAL)
+- `.cursor/` directory should be ignored EXCEPT for:
+  - `.cursor/rules/` - Project-specific AI rules (MUST commit)
+  - `project-rules.mdc` - Your project's coding standards (MUST commit)
+  
+Add to .gitignore:
+```gitignore
+.cursor/*
+!.cursor/rules/
+```
+
+### Docker & Local Development (CONDITIONAL)
+- `local-dev/` - Keep this directory but may ignore certain files within it
+- `docker-compose.override.yml` - Personal local overrides (ignore)
+- `docker-compose.yml` - Shared configuration (commit)
+
+## Git Commit Strategy
+- Commit after each meaningful feature or fix
+- Always include tests with your commits
+- Use conventional commits format:
+  - `feat: Add order creation endpoint`
+  - `fix: Resolve JWT token expiration issue`
+  - `test: Add integration tests for OrderService`
+  - `docs: Update API documentation`
+  - `refactor: Extract order validation logic`
+  - `chore: Update Spring Boot to 3.5.6`
+- Write descriptive commit messages with context
+- Keep commits atomic and focused
+
+## Branching Strategy (Solo Projects)
+Even for solo projects, consider using branches:
+- `main` - Stable, deployable code
+- `feature/feature-name` - New features
+- `bugfix/issue-description` - Bug fixes
+- `refactor/what-youre-refactoring` - Code improvements
+
+Benefits:
+- Clean git history
+- Easy to revert changes
+- Practice for team environments
+- Enables feature flags and testing
+
+## First Commit Checklist
+Before your initial commit:
+1. ✅ .gitignore is properly configured
+2. ✅ Maven wrapper files are present (mvnw, mvnw.cmd, .mvn/)
+3. ✅ Remove any hardcoded secrets or credentials
+4. ✅ Basic tests are written and passing
+5. ✅ README.md with setup instructions exists
+6. ✅ Application runs successfully with `./mvnw spring-boot:run`
+7. ✅ Database migrations or schema are in place
+
+# Error Handling
+- Create custom exceptions for business logic (OrderNotFoundException)
+- Use @ControllerAdvice for global exception handling
+- Log errors with full context
+- Return appropriate HTTP status codes (400, 404, 500)
+
+# What to Avoid
+- Field injection with @Autowired
+- Exposing entities in REST responses
+- Using null, prefer Optional<T>
+- Empty catch blocks
+- Mutable static state
+- Returning null from methods
+- Generic Exception catches without specific handling
+- Direct database access between microservices
+- Synchronous calls between services (use Kafka events)
+
+# Microservices Principles
+- Each service owns its database (database per service pattern)
+- Services communicate only through Kafka events
+- Design for eventual consistency
+- Keep services independently deployable
+- No shared database access between services
+
+# Code Generation Workflow
+When creating a new feature:
+1. Define the entity with JPA annotations
+2. Create the repository interface
+3. Build DTOs (Request, Response, Event)
+4. Implement service with business logic and transactions
+5. Add Kafka publisher if events needed
+6. Create REST controller with proper validation
+7. Add OpenAPI annotations to controller and DTOs
+8. Add Kafka consumer if listening to events
+9. Include appropriate logging throughout
+
+# OpenAPI/Swagger Documentation
+
+## SpringDoc OpenAPI 3 Configuration
+- Use SpringDoc OpenAPI starter for Spring Boot 3.x (version 2.x)
+- Access Swagger UI at: http://localhost:8081/swagger-ui.html
+- Access OpenAPI spec at: http://localhost:8081/api-docs
+- Configure in OpenApiConfig with API metadata and security schemes
+
+## Controller Annotations
+Always annotate controllers with:
+- @Tag(name = "Resource Name", description = "Brief description") at class level
+- @Operation(summary = "Short summary", description = "Detailed description") for each endpoint
+- @ApiResponses with all possible HTTP status codes (200, 201, 400, 401, 403, 404, 500)
+- @SecurityRequirement(name = "bearerAuth") at class or method level for protected endpoints
+- @Parameter for path/query parameters with descriptions and examples
+
+Example:
+```java
+@RestController
+@RequestMapping("/api/orders")
+@Tag(name = "Orders", description = "Order management endpoints")
+@SecurityRequirement(name = "bearerAuth")
+public class OrderController {
+    
+    @Operation(
+        summary = "Create a new order",
+        description = "Creates order for authenticated user and publishes order.created event to Kafka"
+    )
+    @ApiResponses(value = {
+        @ApiResponse(responseCode = "201", description = "Order created successfully"),
+        @ApiResponse(responseCode = "400", description = "Invalid request"),
+        @ApiResponse(responseCode = "401", description = "Unauthorized")
+    })
+    @PostMapping
+    public ResponseEntity<OrderResponse> createOrder(@Valid @RequestBody CreateOrderRequest request) {
+        // implementation
+    }
+}
+```
+
+## DTO Annotations
+Always annotate DTOs with @Schema:
+- Add @Schema(description = "...") at class level
+- Add @Schema(description = "...", example = "...") for each field
+- Include realistic examples that work with seeded data
+- Document constraints (minLength, maxLength, pattern)
+- Use allowableValues for enums
+
+Example:
+```java
+@Schema(description = "Request payload for user registration")
+public record RegisterRequest(
+    @Schema(description = "Unique username. Must be 3-50 characters.", 
+            example = "johndoe",
+            minLength = 3,
+            maxLength = 50)
+    @NotBlank
+    @Size(min = 3, max = 50)
+    String username,
+    
+    @Schema(description = "Valid email address",
+            example = "john.doe@example.com")
+    @Email
+    String email
+) {}
+```
+
+## Security Configuration
+- Define JWT Bearer security scheme in OpenApiConfig
+- Use security scheme name "bearerAuth" consistently
+- Apply security globally in OpenAPI config or per-controller
+- Whitelist Swagger UI endpoints in SecurityConfig:
+  ```java
+  .requestMatchers("/swagger-ui/**", "/swagger-ui.html", "/api-docs/**", "/v3/api-docs/**").permitAll()
+  ```
+
+## Best Practices
+- Keep operation summaries concise (< 80 characters)
+- Write detailed descriptions for complex operations
+- Document all possible error responses with status codes
+- Provide examples that match seeded test data (use mscott, DM-PAPER-001, etc.)
+- Group related endpoints with @Tag
+- Use @Parameter for path/query parameters
+- Include information about side effects (Kafka events, database changes)
+- Update OpenAPI annotations when changing endpoints
+
+## Testing with Swagger UI
+- Always test endpoints via Swagger UI after adding them
+- Use "Authorize" button to set JWT token
+- Verify request/response examples are accurate
+- Ensure all status codes are documented
+
+Always generate complete, working code with no placeholders or TODOs unless explicitly requested.
