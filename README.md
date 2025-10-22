@@ -237,18 +237,40 @@ src/main/java/com/streamcart/order/
 - **Repositories:** Suffix with Repository, extend JpaRepository
 - **Kafka Topics:** Lowercase dot notation (order.created)
 
+### Test Coverage
+
+**Total Tests: 31** ✅
+- **Unit Tests (14):** Business logic with mocked dependencies
+  - `AuthServiceTest` (10 tests) - Registration, login, validation
+  - `OrderServiceTest` (4 tests) - Order creation, retrieval
+- **Integration Tests (16):** Full HTTP flow with real Spring context
+  - `OrderControllerIntegrationTest` - JWT auth, authorization, validation
+- **Application Test (1):** Context loading
+
 ### Running Tests
 
 ```bash
-# Run all tests
+# Run all tests (31 tests)
 ./mvnw test
 
 # Run specific test class
+./mvnw test -Dtest=AuthServiceTest
 ./mvnw test -Dtest=OrderServiceTest
+./mvnw test -Dtest=OrderControllerIntegrationTest
 
-# Run with coverage
-./mvnw test jacoco:report
+# Run unit tests only
+./mvnw test -Dtest=*ServiceTest
+
+# Run with specific profile
+./mvnw test -Dspring.profiles.active=test
 ```
+
+**Test Strategy:**
+- ✅ Unit tests for service layer (mocked dependencies)
+- ✅ Integration tests for controllers (real Spring context + H2)
+- ✅ JWT authentication/authorization testing
+- ✅ Validation and error handling
+- ✅ Kafka publisher mocked in tests
 
 ## Configuration
 

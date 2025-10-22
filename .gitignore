@@ -48,3 +48,6 @@ application-secret.yml
 ### Cursor AI ###
 .cursor/*
 !.cursor/rules/
+
+/htmlReport/**
+!**/src/test/**/htmlReport/
